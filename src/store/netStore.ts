@@ -19,6 +19,8 @@ type NetState = {
   cliNodeId?: string;
   linkingFrom?: string;
   contextMenu?: { visible: boolean; x: number; y: number; nodeId?: string };
+  // ポートごとのIP設定
+  ports: Record<string, Record<string, { mode: "dhcp" | "static"; ip?: string }>>;
   routingTable: Record<string, { dest: string; nextHop: string }[]>;
   linkPulse: Record<string, LinkPulseState[]>;
   addNode(n: Node3D): void;
@@ -37,6 +39,10 @@ type NetState = {
   showContextMenu(nodeId: string, x: number, y: number): void;
   hideContextMenu(): void;
   triggerLinkPulse(a: string, b: string, position?: number, color?: string): void;
+  // ポート設定操作
+  setPortMode(nodeId: string, port: string, mode: "dhcp" | "static"): void;
+  setPortIp(nodeId: string, port: string, ip?: string): void;
+  autoAssignIp(nodeId: string, port: string): void;
   tick(dt: number): void;
 };
 
@@ -70,6 +76,7 @@ export const useNet = create<NetState>((set, get) => ({
   cliNodeId: undefined,
   linkingFrom: undefined,
   contextMenu: { visible: false, x: 0, y: 0, nodeId: undefined },
+  ports: {},
   routingTable: {},
   linkPulse: {},
   addNode: (n) =>
@@ -206,6 +213,43 @@ export const useNet = create<NetState>((set, get) => ({
           [key]: filtered,
         },
       };
+    }),
+  setPortMode: (nodeId, port, mode) =>
+    set((state) => {
+      const nodePorts = { ...(state.ports[nodeId] ?? {}) };
+      const prev = nodePorts[port] ?? { mode: "dhcp" as const };
+      nodePorts[port] = { mode, ip: mode === "dhcp" ? undefined : prev.ip };
+      return { ports: { ...state.ports, [nodeId]: nodePorts } };
+    }),
+  setPortIp: (nodeId, port, ip) =>
+    set((state) => {
+      const nodePorts = { ...(state.ports[nodeId] ?? {}) };
+      const prev = nodePorts[port] ?? { mode: "static" as const };
+      nodePorts[port] = { ...prev, ip };
+      return { ports: { ...state.ports, [nodeId]: nodePorts } };
+    }),
+  autoAssignIp: (nodeId, port) =>
+    set((state) => {
+      // 192.168.0.1 から順番に未使用を探す簡易実装
+      const used = new Set<string>();
+      Object.values(state.nodes).forEach((n) => n.ip && used.add(n.ip));
+      Object.values(state.ports).forEach((m) =>
+        Object.values(m).forEach((p) => p.ip && used.add(p.ip))
+      );
+      const nextIp = (() => {
+        for (let a = 0; a <= 255; a++) {
+          for (let b = 1; b <= 254; b++) {
+            const candidate = `192.168.${a}.${b}`;
+            if (!used.has(candidate)) return candidate;
+          }
+        }
+        return undefined;
+      })();
+      if (!nextIp) return state;
+      const nodePorts = { ...(state.ports[nodeId] ?? {}) };
+      const prev = nodePorts[port] ?? { mode: "static" as const };
+      nodePorts[port] = { ...prev, mode: "static", ip: nextIp };
+      return { ports: { ...state.ports, [nodeId]: nodePorts } };
     }),
   tick: (dt) => {
     const speeds: Record<PacketFlow3D["proto"], number> = { ICMP: 0.4, TCP: 0.55, UDP: 0.7 };

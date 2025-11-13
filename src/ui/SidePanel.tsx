@@ -41,7 +41,11 @@ export default function SidePanel() {
       }}
       onMouseDownCapture={(e) => {
         if (e.button !== 0) return;
-        clearSelection({ mode: "idle", nodeId: undefined, linkId: undefined });
+        // パネル内の操作（ボタンや入力など）では選択解除しない
+        // 背景（この要素自身）をクリックしたときのみ解除
+        if (e.currentTarget === e.target) {
+          clearSelection({ mode: "idle", nodeId: undefined, linkId: undefined });
+        }
       }}
     >
       {/* Node add UI moved to center panel NodePalette */}
@@ -155,20 +159,104 @@ function getPortsForNode(node: Node3D): string[] {
 }
 
 function PortsList({ node, ports }: { node: Node3D; ports: string[] }) {
+  const portsState = useNet((s) => s.ports);
+  const setMode = useNet((s) => s.setPortMode);
+  const setIp = useNet((s) => s.setPortIp);
+  const auto = useNet((s) => s.autoAssignIp);
   if (!ports.length) return null;
-  const showIpState = node.kind === "ROUTER" || node.kind === "SWITCH";
-  const ipStateLabel = node.ip ? `IP: ${node.ip}` : "IP: (not set)";
+  const isL3 = node.kind === "ROUTER" || node.kind === "SWITCH" || node.kind === "SERVER" || node.kind === "PC";
   return (
     <div style={{ marginTop: "0.6rem" }}>
       <div style={{ fontWeight: 600, fontSize: "0.8rem", marginBottom: "0.2rem" }}>Available Ports</div>
-      {ports.map((port) => (
-        <div key={port} style={{ marginBottom: "0.15rem" }}>
-          • {port}
-          {showIpState && (
-            <span style={{ opacity: 0.75, fontSize: "0.72rem", marginLeft: "0.3rem" }}>{ipStateLabel}</span>
-          )}
-        </div>
-      ))}
+      {ports.map((port) => {
+        const cfg = portsState[node.id]?.[port] ?? { mode: "dhcp" as const };
+        const ip = cfg.ip ?? "";
+        return (
+          <div key={port} style={{ marginBottom: "0.35rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+              <div style={{ minWidth: 64 }}>• {port}</div>
+              {isL3 && (
+                <div style={{ display: "flex", gap: 4 }}>
+                  <button
+                    type="button"
+                    onClick={() => setMode(node.id, port, "dhcp")}
+                    style={{
+                      padding: "0.15rem 0.35rem",
+                      borderRadius: 4,
+                      border: "1px solid rgba(0,255,204,0.35)",
+                      background: cfg.mode === "dhcp" ? "rgba(0,255,204,0.25)" : "transparent",
+                      color: "#00ffcc",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      fontSize: "0.72rem",
+                    }}
+                  >
+                    DHCP
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMode(node.id, port, "static")}
+                    style={{
+                      padding: "0.15rem 0.35rem",
+                      borderRadius: 4,
+                      border: "1px solid rgba(0,255,204,0.35)",
+                      background: cfg.mode === "static" ? "rgba(0,255,204,0.25)" : "transparent",
+                      color: "#00ffcc",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                      fontSize: "0.72rem",
+                    }}
+                  >
+                    Static
+                  </button>
+                </div>
+              )}
+            </div>
+            {isL3 && cfg.mode === "static" && (
+              <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", marginTop: "0.25rem", marginLeft: "1.2rem" }}>
+                <input
+                  type="text"
+                  value={ip}
+                  onChange={(e) => setIp(node.id, port, e.currentTarget.value)}
+                  placeholder="192.168.0.10"
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    background: "black",
+                    color: "#00ffcc",
+                    border: "1px solid rgba(0,255,204,0.35)",
+                    borderRadius: 4,
+                    padding: "0.2rem 0.35rem",
+                    fontFamily: "monospace",
+                    fontSize: "0.78rem",
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => auto(node.id, port)}
+                  style={{
+                    padding: "0.2rem 0.45rem",
+                    borderRadius: 4,
+                    border: "1px solid rgba(0,255,204,0.35)",
+                    background: "rgba(0,0,0,0.4)",
+                    color: "#00ffcc",
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    fontSize: "0.72rem",
+                  }}
+                >
+                  Auto
+                </button>
+              </div>
+            )}
+            {isL3 && cfg.mode === "dhcp" && (
+              <div style={{ marginTop: "0.15rem", marginLeft: "1.2rem", opacity: 0.75, fontSize: "0.72rem" }}>
+                IP: assigned by DHCP
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
