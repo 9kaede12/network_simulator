@@ -95,6 +95,11 @@ export default function SidePanel() {
         {Object.values(links).map((l) => (
           <div key={l.id} style={{ marginBottom: "0.35rem" }}>
             {l.a} ⇄ {l.b} [{l.up ? "up" : "down"}] {l.bandwidthMbps} Mbps
+            {l.subnet && (
+              <div style={{ marginLeft: "0.6rem", opacity: 0.85 }}>
+                subnet: {l.subnet.network}/{l.subnet.cidr}
+              </div>
+            )}
           </div>
         ))}
         {Object.keys(links).length === 0 && <EmptyLine />}
@@ -282,6 +287,11 @@ function ConnectedNodesList({
         return (
           <div key={link.id} style={{ marginBottom: "0.2rem" }}>
             • {peerDisplay}
+            {link.subnet && (
+              <span style={{ marginLeft: 6, opacity: 0.85 }}>
+                [{link.subnet.network}/{link.subnet.cidr}]
+              </span>
+            )}
           </div>
         );
       })}

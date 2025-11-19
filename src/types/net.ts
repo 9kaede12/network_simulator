@@ -17,6 +17,7 @@ export interface Link3D {
   up: boolean;
   bandwidthMbps: number;
   vlanTag?: VLANId;
+  subnet?: { network: string; cidr: number };
 }
 
 export interface PacketFlow3D {

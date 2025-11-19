@@ -6,6 +6,7 @@ import SidePanel from "@/ui/SidePanel";
 import MissionPanel from "@/ui/MissionPanel";
 import { playWaveLoop } from "@/lib/sound";
 import NodePalette from "@/ui/NodePalette";
+import SubnetPalette from "@/ui/SubnetPalette";
 import NodeContextMenu from "@/ui/NodeContextMenu";
 
 export default function App() {
@@ -39,6 +40,7 @@ export default function App() {
     >
       <CanvasRoot />
       <NodePalette />
+      <SubnetPalette />
       <NodeContextMenu />
       <CLIConsole />
       <SidePanel />

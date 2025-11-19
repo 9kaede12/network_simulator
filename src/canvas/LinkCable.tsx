@@ -157,8 +157,8 @@ export default function LinkCable({ link }: { link: Link3D }) {
   });
 
   return (
-    <group>
-      <mesh geometry={geometry} material={baseMaterial} />
+    <group userData={{ linkId: link.id }}>
+      <mesh geometry={geometry} material={baseMaterial} userData={{ linkId: link.id }} />
       <instancedMesh
         ref={particleMeshRef}
         args={[particleGeometry, particleMaterial, MAX_PARTICLES]}

@@ -21,13 +21,21 @@ type NetState = {
   contextMenu?: { visible: boolean; x: number; y: number; nodeId?: string };
   // ポートごとのIP設定
   ports: Record<string, Record<string, { mode: "dhcp" | "static"; ip?: string }>>;
+  // UI: サブネットドラッグ時にケーブル上にいるか
+  dragOverLink: boolean;
+  dragHoverLinkId?: string;
+  // UI: 右上パレットの開閉状態
+  activePalette: "node" | "subnet" | null;
   routingTable: Record<string, { dest: string; nextHop: string }[]>;
   linkPulse: Record<string, LinkPulseState[]>;
+  subnetCursor24: number;
+  subnetCursor30: number;
   addNode(n: Node3D): void;
   addLink(l: Link3D): void;
   removeNode(id: string): void;
   removeLink(id: string): void;
   removeLinksForNode(id: string): void;
+  assignSubnetToLink(linkId: string, cidr: number): void;
   addFlow(f: PacketFlow3D): void;
   getPath(from: string, to: string): string[];
   clear(): void;
@@ -43,6 +51,9 @@ type NetState = {
   setPortMode(nodeId: string, port: string, mode: "dhcp" | "static"): void;
   setPortIp(nodeId: string, port: string, ip?: string): void;
   autoAssignIp(nodeId: string, port: string): void;
+  setDragOverLink(active: boolean): void;
+  setDragHoverLink(id?: string): void;
+  setActivePalette(palette: "node" | "subnet" | null): void;
   tick(dt: number): void;
 };
 
@@ -77,6 +88,12 @@ export const useNet = create<NetState>((set, get) => ({
   linkingFrom: undefined,
   contextMenu: { visible: false, x: 0, y: 0, nodeId: undefined },
   ports: {},
+  dragOverLink: false,
+  dragHoverLinkId: undefined,
+  activePalette: null,
+  // サブネット自動割当用カーソル
+  subnetCursor24: 0,
+  subnetCursor30: 0,
   routingTable: {},
   linkPulse: {},
   addNode: (n) =>
@@ -146,6 +163,74 @@ export const useNet = create<NetState>((set, get) => ({
       }
       const routingTable = computeRoutingTable(state.nodes, links);
       return { links, routingTable };
+    }),
+  assignSubnetToLink: (linkId, cidr) =>
+    set((state) => {
+      const link = state.links[linkId];
+      if (!link) return state;
+      // ネットワーク決定（簡易: 10.0.0.0/8 内で連番）
+      let network = "";
+      if (cidr === 30) {
+        const n = state.subnetCursor30;
+        const third = (n * 4) % 256;
+        const second = Math.floor((n * 4) / 256) % 256;
+        network = `10.${second}.${third}.0`;
+      } else if (cidr === 24) {
+        const n = state.subnetCursor24 % 256;
+        network = `10.${n}.0.0`;
+      } else {
+        // 未対応CIDRは/30扱い
+        const n = state.subnetCursor30;
+        const third = (n * 4) % 256;
+        const second = Math.floor((n * 4) / 256) % 256;
+        network = `10.${second}.${third}.0`;
+        cidr = 30;
+      }
+
+      const next = { ...state.links[linkId], subnet: { network, cidr } } as Link3D;
+
+      const getPortList = (node: Node3D): string[] => {
+        const kind = node.kind;
+        if (kind === "PC" || kind === "SERVER") return ["eth0", "eth1"];
+        if (kind === "ROUTER") return ["Gig0/0", "Gig0/1", "Gig0/2", "Gig0/3"];
+        if (kind === "SWITCH") return Array.from({ length: 8 }, (_, i) => `Fa0/${i + 1}`);
+        return ["eth0"];
+      };
+
+      const pickPort = (nodeId: string): string => {
+        const node = state.nodes[nodeId];
+        const list = getPortList(node);
+        const usedMap = state.ports[nodeId] ?? {};
+        const free = list.find((p) => !usedMap[p]?.ip);
+        return free ?? list[0];
+      };
+
+      const aPort = pickPort(next.a);
+      const bPort = pickPort(next.b);
+
+      const ports = { ...state.ports } as NetState["ports"];
+      ports[next.a] = { ...(ports[next.a] ?? {}) };
+      ports[next.b] = { ...(ports[next.b] ?? {}) };
+
+      const ipFor = (host: number) => {
+        const [o1, o2, o3, o4] = network.split(".").map((v) => parseInt(v, 10));
+        if (cidr === 24) {
+          return `${o1}.${o2}.${o3}.${host}`;
+        }
+        // /30
+        return `${o1}.${o2}.${o3}.${host}`;
+      };
+
+      const aIp = cidr === 30 ? ipFor(1) : ipFor(1);
+      const bIp = cidr === 30 ? ipFor(2) : ipFor(2);
+
+      ports[next.a][aPort] = { mode: "static", ip: aIp };
+      ports[next.b][bPort] = { mode: "static", ip: bIp };
+
+      const links = { ...state.links, [linkId]: next };
+      const cursor24 = cidr === 24 ? state.subnetCursor24 + 1 : state.subnetCursor24;
+      const cursor30 = cidr === 30 ? state.subnetCursor30 + 1 : state.subnetCursor30;
+      return { links, ports, subnetCursor24: cursor24, subnetCursor30: cursor30 } as Partial<NetState>;
     }),
   addFlow: (f) =>
     set((state) => {
@@ -251,6 +336,10 @@ export const useNet = create<NetState>((set, get) => ({
       nodePorts[port] = { ...prev, mode: "static", ip: nextIp };
       return { ports: { ...state.ports, [nodeId]: nodePorts } };
     }),
+  setDragOverLink: (active) =>
+    set((state) => (state.dragOverLink === active ? state : { dragOverLink: active })),
+  setDragHoverLink: (id) => set((state) => (state.dragHoverLinkId === id ? state : { dragHoverLinkId: id })),
+  setActivePalette: (palette) => set((state) => (state.activePalette === palette ? state : { activePalette: palette })),
   tick: (dt) => {
     const speeds: Record<PacketFlow3D["proto"], number> = { ICMP: 0.4, TCP: 0.55, UDP: 0.7 };
     const nextFlows: Record<string, PacketFlow3D> = {};
