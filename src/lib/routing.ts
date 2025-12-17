@@ -90,9 +90,6 @@ function buildAdjacency(
       
       // スイッチ間のリンクの場合、VLANをチェック
       if (aNode?.kind === "SWITCH" && bNode?.kind === "SWITCH") {
-        // トランクポートの場合は、許可されたVLANをチェック
-        const aConfig = switchConfigs[link.a];
-        const bConfig = switchConfigs[link.b];
         // 簡易実装: トランクポートのチェックは省略
       } else if (aNode?.kind === "SWITCH" || bNode?.kind === "SWITCH") {
         // スイッチとエンドデバイスの間のリンク
