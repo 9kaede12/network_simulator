@@ -19,22 +19,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 静的ファイル配信（フロントエンド用）
-if os.path.exists("dist"):
-    app.mount("/assets", StaticFiles(directory="dist/assets"), name="assets")
-
-    @app.get("/{full_path:path}")
-    async def serve_frontend(full_path: str):
-        file_path = f"dist/{full_path}"
-        if os.path.exists(file_path) and os.path.isfile(file_path):
-            return FileResponse(file_path)
-        return FileResponse("dist/index.html")
-
 
 async def send_event(ws: WebSocket, payload: Dict[str, Any]) -> None:
     await ws.send_text(json.dumps(payload))
 
 
+# ⚠️ 重要: WebSocketエンドポイントを静的ファイル配信より先に定義
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
@@ -109,3 +99,37 @@ async def websocket_endpoint(ws: WebSocket):
         print("[WS] Client disconnected")
     except Exception as exc:  # pragma: no cover - logging unexpected errors
         print(f"[WS] Error: {exc}")
+
+
+# 静的ファイル配信（フロントエンド用）
+# ⚠️ 重要: WebSocketエンドポイントの後に配置
+if os.path.exists("dist"):
+    # assetsフォルダが存在する場合のみマウント
+    if os.path.exists("dist/assets"):
+        app.mount("/assets", StaticFiles(directory="dist/assets"), name="assets")
+    
+    # ルートパスとその他すべてのパスでフロントエンドを配信
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        # 空のパス（ルート）の場合はindex.htmlを返す
+        if not full_path:
+            return FileResponse("dist/index.html")
+        
+        # 指定されたファイルが存在する場合はそれを返す
+        file_path = f"dist/{full_path}"
+        if os.path.exists(file_path) and os.path.isfile(file_path):
+            return FileResponse(file_path)
+        
+        # それ以外の場合はindex.htmlを返す（SPAルーティング用）
+        return FileResponse("dist/index.html")
+else:
+    print("⚠️ Warning: dist directory not found. Frontend will not be served.")
+    
+    # デバッグ用：distフォルダが存在しない場合のルートエンドポイント
+    @app.get("/")
+    async def root():
+        return {
+            "status": "Backend is running",
+            "message": "Frontend not found. Please build the frontend first.",
+            "websocket": "/ws"
+        }
