@@ -8,6 +8,7 @@ export default function NodeContextMenu() {
   const removeNode = useNet((s) => s.removeNode);
   const removeLinksForNode = useNet((s) => s.removeLinksForNode);
   const removeLink = useNet((s) => s.removeLink);
+  const showIpDialog = useNet((s) => s.showIpDialog);
   const links = useNet((s) => s.links);
   const nodes = useNet((s) => s.nodes);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -70,6 +71,11 @@ export default function NodeContextMenu() {
     hide();
   };
 
+  const handleAddIpAddress = () => {
+    showIpDialog(ctx.nodeId!);
+    hide();
+  };
+
   return (
     <div
       ref={menuRef}
@@ -93,6 +99,7 @@ export default function NodeContextMenu() {
       {mode === "root" ? (
         <>
           <MenuItem onClick={startLink}>Add Link</MenuItem>
+          {hasLinks && <MenuItem onClick={handleAddIpAddress}>Add IP address</MenuItem>}
           <MenuItem onClick={() => (hasLinks ? setMode("deleteLink") : undefined)} disabled={!hasLinks}>
             {hasLinks ? "Delete Link" : "Delete Link (none)"}
           </MenuItem>

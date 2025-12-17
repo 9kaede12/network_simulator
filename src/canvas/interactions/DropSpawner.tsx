@@ -80,13 +80,9 @@ export default function DropSpawner() {
         e.preventDefault();
         const { cidr } = JSON.parse(subnetStr) as { cidr: number };
 
-        const rect = gl.domElement.getBoundingClientRect();
-        mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-        mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-        ray.setFromCamera(mouse, camera);
-        const intersects = ray.intersectObjects(scene.children, true);
-        const hit = intersects.find((i) => i.object.userData?.linkId);
-        const linkId = hit ? (hit.object.userData.linkId as string) : hoverRef.current;
+        // ドロップ時には、直前の dragover で検出して保持しているリンクIDをそのまま利用することで
+        // 重いレイキャストを避け、UIの引っ掛かりを抑える
+        const linkId = hoverRef.current;
         if (linkId) {
           assignSubnet(linkId, cidr);
         }

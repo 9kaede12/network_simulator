@@ -25,8 +25,9 @@ const fragmentShader = /* glsl */ `
     vec3 base = mix(uColorA, uColorB, vUv.y);
     vec2 grid = fract(vUv * 40.0);
     float line = step(grid.x, 0.015) + step(grid.y, 0.015);
-    float intensity = smoothstep(0.0, 1.0, sin(vUv.y * 3.14159 + uTime));
-    vec3 color = base + line * uLineColor * intensity * 0.8;
+    float pulse = 0.5 + 0.5 * sin(vUv.y * 3.14159 + uTime);
+    float intensity = 0.35 + 0.65 * smoothstep(0.0, 1.0, pulse);
+    vec3 color = base + line * uLineColor * intensity * 0.85;
     gl_FragColor = vec4(color, 1.0);
   }
 `;

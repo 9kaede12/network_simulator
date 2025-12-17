@@ -18,10 +18,9 @@ export default function LinkCable({ link }: { link: Link3D }) {
   const { nodes } = useNet.getState();
   const geometryDirection = key === `${link.a}-${link.b}` ? 1 : -1;
 
-  const start = nodes[link.a]?.position ?? [0, 0, 0];
-  const end = nodes[link.b]?.position ?? [0, 0, 0];
-
   const { geometry, progressAttr, lineColor, curve } = useMemo(() => {
+    const start = nodes[link.a]?.position ?? [0, 0, 0];
+    const end = nodes[link.b]?.position ?? [0, 0, 0];
     const startVec = new THREE.Vector3(...start);
     const endVec = new THREE.Vector3(...end);
 
@@ -63,7 +62,7 @@ export default function LinkCable({ link }: { link: Link3D }) {
 
     const backgroundLineColor = new THREE.Color("#5cc9d1");
     return { geometry: tube, progressAttr: attr, lineColor: backgroundLineColor, curve };
-  }, [start, end]);
+  }, [link.a, link.b, nodes]);
 
   useEffect(() => {
     geometry.setAttribute("progress", new THREE.BufferAttribute(progressAttr, 1));
@@ -110,8 +109,8 @@ export default function LinkCable({ link }: { link: Link3D }) {
       mesh.renderOrder = 5;
       // 明示的に instanceColor を確保して setColorAt を有効化
       const colors = new Float32Array(MAX_PARTICLES * 3);
-      // @ts-ignore three type follows runtime
-      mesh.instanceColor = new THREE.InstancedBufferAttribute(colors, 3);
+      (mesh as unknown as { instanceColor: THREE.InstancedBufferAttribute }).instanceColor =
+        new THREE.InstancedBufferAttribute(colors, 3);
       mesh.count = 0;
     }
   }, []);
