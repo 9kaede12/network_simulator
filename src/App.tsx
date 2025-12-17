@@ -517,7 +517,13 @@ export default function App() {
           <IpConfigDialog />
           <CLIConsole />
           <SidePanel />
-          {currentMission && <MissionPanel />}
+          {currentMission && (
+            <MissionPanel
+              onCompleteTutorial={() => {
+                setStarted(false);
+              }}
+            />
+          )}
         </>
       )}
       {!started && (
