@@ -109,7 +109,9 @@ if os.path.exists("dist"):
         app.mount("/assets", StaticFiles(directory="dist/assets"), name="assets")
     
     # ルートパスとその他すべてのパスでフロントエンドを配信
+    # HEADリクエストにも対応（Renderのヘルスチェック用）
     @app.get("/{full_path:path}")
+    @app.head("/{full_path:path}")
     async def serve_frontend(full_path: str):
         # 空のパス（ルート）の場合はindex.htmlを返す
         if not full_path:
@@ -127,6 +129,7 @@ else:
     
     # デバッグ用：distフォルダが存在しない場合のルートエンドポイント
     @app.get("/")
+    @app.head("/")
     async def root():
         return {
             "status": "Backend is running",
