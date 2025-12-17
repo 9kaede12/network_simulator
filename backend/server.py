@@ -7,7 +7,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from vtp import handle_vtp_config_command, handle_vtp_show_command
+from .vtp import handle_vtp_config_command, handle_vtp_show_command
 
 app = FastAPI()
 
