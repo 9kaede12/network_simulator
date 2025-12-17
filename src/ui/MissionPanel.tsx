@@ -9,6 +9,7 @@ export default function MissionPanel() {
   const { current, progress } = useMission(
     useShallow((state) => ({ current: state.current, progress: state.progress }))
   );
+  const isTutorial = Boolean(current?.id?.startsWith("tutorial_"));
   const setMission = useMission((state) => state.setMission);
   const resetMission = useMission((state) => state.resetMission);
   const completedMap = useMission((state) => state.completed);
@@ -49,7 +50,7 @@ export default function MissionPanel() {
         top: 0,
         width: "300px",
         height: "100%",
-        background: "rgba(8, 16, 24, 0.92)",
+        background: isTutorial ? "rgba(8, 16, 24, 0.62)" : "rgba(8, 16, 24, 0.92)",
         color: "#00ffcc",
         fontFamily: "monospace",
         padding: "0.9rem",
@@ -57,6 +58,8 @@ export default function MissionPanel() {
         overflowY: "auto",
         borderRight: "1px solid rgba(0, 255, 204, 0.35)",
         backdropFilter: "blur(6px)",
+        WebkitBackdropFilter: "blur(6px)",
+        zIndex: 45,
       }}
       onMouseDownCapture={(e) => {
         if (e.button !== 0) return;
@@ -114,6 +117,189 @@ export default function MissionPanel() {
                 <li>「Add IP address」を選び、接続されているポートを選択します。</li>
                 <li>DHCP または Static を選び、必要ならIPアドレスとサブネットマスクを設定して保存します。</li>
                 <li>PC1 と R1 など、2つ以上のポートに設定するとゴール達成です。</li>
+              </ol>
+            </div>
+          )}
+          {current.id === "tutorial_vlan_vtp" && (
+            <div style={{ marginBottom: "0.8rem", fontSize: "0.78rem", lineHeight: 1.5 }}>
+              <div style={{ marginBottom: 4, opacity: 0.9 }}>チュートリアルの手順</div>
+              <ol style={{ paddingLeft: "1.1rem", margin: 0 }}>
+                <li>
+                  SW1 の CLI を開き、<span style={{ opacity: 0.85 }}>[ユーザEXEC → 特権EXEC]</span> へ:
+                  <div style={{ marginLeft: "0.6rem" }}>
+                    <code>enable</code>
+                  </div>
+                </li>
+                <li>
+                  <span style={{ opacity: 0.85 }}>[特権EXEC → グローバルコンフィグ]</span> へ:
+                  <div style={{ marginLeft: "0.6rem" }}>
+                    <code>configure terminal</code>（<code>conf t</code>）
+                  </div>
+                </li>
+                <li>
+                  <span style={{ opacity: 0.85 }}>[グローバルコンフィグ]</span> で SW1 を VTP サーバーモード・ドメイン設定:
+                  <div style={{ marginLeft: "0.6rem" }}>
+                    <code>vtp mode server</code>
+                    <br />
+                    <code>vtp domain TUTORIAL</code>
+                  </div>
+                </li>
+                <li>
+                  SW2 でも <span style={{ opacity: 0.85 }}>[ユーザEXEC → 特権EXEC → グローバルコンフィグ]</span> へ入り、クライアントとして同じドメインを設定:
+                  <div style={{ marginLeft: "0.6rem" }}>
+                    <code>enable</code>
+                    <br />
+                    <code>conf t</code>
+                    <br />
+                    <code>vtp mode client</code>
+                    <br />
+                    <code>vtp domain TUTORIAL</code>
+                  </div>
+                </li>
+                <li>
+                  いずれかのスイッチで <span style={{ opacity: 0.85 }}>[特権EXEC]</span> に戻し状態を確認:
+                  <div style={{ marginLeft: "0.6rem" }}>
+                    <code>show vtp status</code>
+                  </div>
+                </li>
+              </ol>
+            </div>
+          )}
+          {current.id === "tutorial_vlan_create" && (
+            <div style={{ marginBottom: "0.8rem", fontSize: "0.78rem", lineHeight: 1.5 }}>
+              <div style={{ marginBottom: 4, opacity: 0.9 }}>チュートリアルの手順</div>
+              <ol style={{ paddingLeft: "1.1rem", margin: 0 }}>
+                <li>
+                  <span style={{ opacity: 0.85 }}>[ユーザEXEC → 特権EXEC]</span> へ:
+                  <div style={{ marginLeft: "0.6rem" }}>
+                    <code>enable</code>
+                  </div>
+                </li>
+                <li>
+                  <span style={{ opacity: 0.85 }}>[特権EXEC → グローバルコンフィグ]</span> へ:
+                  <div style={{ marginLeft: "0.6rem" }}>
+                    <code>conf t</code>
+                  </div>
+                </li>
+                <li>
+                  <span style={{ opacity: 0.85 }}>[グローバルコンフィグ]</span> で VLAN 10 を作成し、必要なら名前を付ける:
+                  <div style={{ marginLeft: "0.6rem" }}>
+                    <code>vlan 10</code>
+                    <br />
+                    <code>name VLAN10</code>（任意）
+                  </div>
+                </li>
+                <li>
+                  <span style={{ opacity: 0.85 }}>[特権EXEC]</span> へ戻り確認:
+                  <div style={{ marginLeft: "0.6rem" }}>
+                    <code>end</code> または <code>Ctrl+Z</code>
+                    <br />
+                    <code>show vlan brief</code>
+                  </div>
+                </li>
+              </ol>
+            </div>
+          )}
+          {current.id === "tutorial_vlan_ports" && (
+            <div style={{ marginBottom: "0.8rem", fontSize: "0.78rem", lineHeight: 1.5 }}>
+              <div style={{ marginBottom: 4, opacity: 0.9 }}>チュートリアルの手順</div>
+              <ol style={{ paddingLeft: "1.1rem", margin: 0 }}>
+                <li>
+                  <span style={{ opacity: 0.85 }}>[ユーザEXEC → 特権EXEC → グローバルコンフィグ]</span> へ:
+                  <div style={{ marginLeft: "0.6rem" }}>
+                    <code>enable</code>
+                    <br />
+                    <code>conf t</code>
+                  </div>
+                </li>
+                <li>
+                  アクセスポートを VLAN 10 に設定する（例: <code>Fa0/1</code>）:
+                  <div style={{ marginLeft: "0.6rem" }}>
+                    <code>interface Fa0/1</code>
+                    <br />
+                    <code>switchport mode access</code>
+                    <br />
+                    <code>switchport access vlan 10</code>
+                  </div>
+                </li>
+                <li>
+                  他の接続ポートも同様に設定:
+                  <div style={{ marginLeft: "0.6rem" }}>
+                    <code>interface Fa0/2</code>
+                    <br />
+                    <code>switchport mode access</code>
+                    <br />
+                    <code>switchport access vlan 10</code>
+                  </div>
+                </li>
+                <li>
+                  必要に応じて <span style={{ opacity: 0.85 }}>[特権EXEC]</span> に戻り確認:
+                  <div style={{ marginLeft: "0.6rem" }}>
+                    <code>end</code>
+                    <br />
+                    <code>show vlan brief</code>
+                  </div>
+                </li>
+              </ol>
+            </div>
+          )}
+          {current.id === "tutorial_vlan_svi" && (
+            <div style={{ marginBottom: "0.8rem", fontSize: "0.78rem", lineHeight: 1.5 }}>
+              <div style={{ marginBottom: 4, opacity: 0.9 }}>チュートリアルの手順</div>
+              <ol style={{ paddingLeft: "1.1rem", margin: 0 }}>
+                <li>
+                  <span style={{ opacity: 0.85 }}>[ユーザEXEC → 特権EXEC → グローバルコンフィグ]</span> へ:
+                  <div style={{ marginLeft: "0.6rem" }}>
+                    <code>enable</code>
+                    <br />
+                    <code>conf t</code>
+                  </div>
+                </li>
+                <li>
+                  <span style={{ opacity: 0.85 }}>[インターフェースコンフィグ]</span> で VLAN 10 の SVI を設定:
+                  <div style={{ marginLeft: "0.6rem" }}>
+                    <code>interface vlan 10</code>
+                    <br />
+                    <code>ip address 192.168.10.1 255.255.255.0</code>
+                    <br />
+                    <code>no shutdown</code>
+                  </div>
+                </li>
+                <li>
+                  必要なら <span style={{ opacity: 0.85 }}>[特権EXEC]</span> で確認:
+                  <div style={{ marginLeft: "0.6rem" }}>
+                    <code>end</code>
+                    <br />
+                    <code>show ip interface brief</code>
+                  </div>
+                </li>
+              </ol>
+            </div>
+          )}
+          {current.id === "tutorial_vlan_verify" && (
+            <div style={{ marginBottom: "0.8rem", fontSize: "0.78rem", lineHeight: 1.5 }}>
+              <div style={{ marginBottom: 4, opacity: 0.9 }}>チュートリアルの手順</div>
+              <ol style={{ paddingLeft: "1.1rem", margin: 0 }}>
+                <li>
+                  <span style={{ opacity: 0.85 }}>[ユーザEXEC → 特権EXEC]</span> へ:
+                  <div style={{ marginLeft: "0.6rem" }}>
+                    <code>enable</code>
+                  </div>
+                </li>
+                <li>
+                  VLAN 状態を確認:
+                  <div style={{ marginLeft: "0.6rem" }}>
+                    <code>show vlan brief</code>
+                    <br />
+                    <code>show ip interface brief</code>（SVI確認用）
+                  </div>
+                </li>
+                <li>
+                  必要なら設定を保存（任意）:
+                  <div style={{ marginLeft: "0.6rem" }}>
+                    <code>copy running-config startup-config</code>
+                  </div>
+                </li>
               </ol>
             </div>
           )}

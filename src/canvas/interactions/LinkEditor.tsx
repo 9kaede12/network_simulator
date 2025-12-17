@@ -25,10 +25,12 @@ export default function LinkEditor() {
       mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
     };
 
-    const isLinkButton = (e: PointerEvent) => false; // 右クリック直接リンク開始は無効化（コンテキストメニュー経由に）
+    // 現状はキャンバスから直接リンク開始するUIは使っていないため、
+    // 常に false を返すスタブとして定義しておく
+    const isLinkButton = () => false;
 
     function onPointerDown(e: PointerEvent) {
-      if (!isLinkButton(e)) return;
+      if (!isLinkButton()) return;
       updateMouseFromEvent(e);
       ray.setFromCamera(mouse, camera);
 
@@ -58,9 +60,9 @@ export default function LinkEditor() {
       if (!linking.current && !tempLine.current) {
         const from = getState().linkingFrom;
         if (from) {
-          linking.current = true;
-          startNode.current = from;
-          const geom = new THREE.BufferGeometry().setFromPoints([
+      linking.current = true;
+      startNode.current = from;
+      const geom = new THREE.BufferGeometry().setFromPoints([
             new THREE.Vector3(),
             new THREE.Vector3(),
           ]);
@@ -162,7 +164,7 @@ export default function LinkEditor() {
         tempLine.current = null;
       }
     };
-  }, [camera, gl, scene, addLink, nodes, setSelected]);
+  }, [camera, gl, scene, addLink, nodes, setSelected, getState]);
 
   // ストアの linkingFrom 変化を即時反映（ポインタ移動を待たずに仮ケーブルを出す）
   useEffect(() => {
@@ -180,9 +182,7 @@ export default function LinkEditor() {
       startNode.current = from;
       linking.current = true;
       setSelected({ mode: "linking", nodeId: from, linkId: undefined });
-      try {
-        (gl.domElement.style as any).cursor = "crosshair";
-      } catch {}
+      gl.domElement.style.cursor = "crosshair";
     } else if (!linkingFromId && linking.current) {
       if (tempLine.current) {
         scene.remove(tempLine.current);
@@ -193,9 +193,7 @@ export default function LinkEditor() {
       linking.current = false;
       startNode.current = null;
       setSelected({ mode: "idle", nodeId: undefined, linkId: undefined });
-      try {
-        (gl.domElement.style as any).cursor = "auto";
-      } catch {}
+      gl.domElement.style.cursor = "auto";
     }
   }, [linkingFromId, nodes, scene, gl, setSelected]);
 

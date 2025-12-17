@@ -107,6 +107,33 @@ export const useMission = create<MissionState>((set, get) => ({
     current.goals.forEach((goal) => {
       let done = false;
       switch (goal.type) {
+        case "nodes": {
+          const nodes = Object.values(net.nodes);
+          if (goal.requiredKinds && goal.requiredKinds.length) {
+            done = goal.requiredKinds.every((kind) => nodes.some((n) => n.kind === kind));
+          } else if (typeof goal.minNodes === "number") {
+            done = nodes.length >= goal.minNodes;
+          }
+          break;
+        }
+        case "links": {
+          const linkCount = Object.keys(net.links).length;
+          if (typeof goal.minLinks === "number") {
+            done = linkCount >= goal.minLinks;
+          }
+          break;
+        }
+        case "ip": {
+          const configuredCount = Object.values(net.ports).reduce((acc, portMap) => {
+            return (
+              acc +
+              Object.values(portMap).filter((p) => Boolean(p.ip) && typeof p.maskCidr === "number").length
+            );
+          }, 0);
+          const minPorts = typeof goal.minConfiguredPorts === "number" ? goal.minConfiguredPorts : 1;
+          done = configuredCount >= minPorts;
+          break;
+        }
         case "topology": {
           done = current.setup.links.every((required) =>
             Object.values(net.links).some(
@@ -173,18 +200,61 @@ export const useMission = create<MissionState>((set, get) => ({
 
 let previousFlows: Record<string, PacketFlow3D> = { ...useNet.getState().flows };
 
+let previousFlowKey = Object.keys(previousFlows).sort().join(",");
+
+const computeMissionNetKey = (state: ReturnType<typeof useNet.getState>) => {
+  const nodesKey = Object.values(state.nodes)
+    .map((n) => `${n.id}:${n.kind}`)
+    .sort()
+    .join(",");
+  const linksKey = Object.values(state.links)
+    .map((l) => {
+      const a = l.a < l.b ? l.a : l.b;
+      const b = l.a < l.b ? l.b : l.a;
+      return `${a}<->${b}:${l.up ? 1 : 0}`;
+    })
+    .sort()
+    .join(",");
+  const portsKey = Object.entries(state.ports)
+    .flatMap(([nodeId, portMap]) =>
+      Object.entries(portMap).map(([port, p]) => `${nodeId}:${port}:${p.ip ?? ""}/${p.maskCidr ?? ""}`)
+    )
+    .sort()
+    .join(",");
+  return `${nodesKey}||${linksKey}||${portsKey}`;
+};
+
+let previousMissionNetKey = computeMissionNetKey(useNet.getState());
+
 useNet.subscribe((state) => {
+  const flowKey = Object.keys(state.flows).sort().join(",");
+  const missionNetKey = computeMissionNetKey(state);
+  const flowChanged = flowKey !== previousFlowKey;
+  const missionNetChanged = missionNetKey !== previousMissionNetKey;
+  if (!flowChanged && !missionNetChanged) return;
+  previousMissionNetKey = missionNetKey;
+
   const mission = useMission.getState();
-  const removedIds = Object.keys(previousFlows).filter((id) => !(id in state.flows));
-  removedIds.forEach((id) => {
-    const flow = previousFlows[id];
-    if (!flow) return;
-    const start = flow.path[0]?.[0];
-    const end = flow.path.length ? flow.path[flow.path.length - 1][1] : undefined;
-    if (start && end) {
-      mission.markConnectivityComplete(start, end);
+  if (flowChanged) {
+    previousFlowKey = flowKey;
+    const currentSet = new Set(flowKey ? flowKey.split(",").filter(Boolean) : []);
+    const removedIds = Object.keys(previousFlows).filter((id) => !currentSet.has(id));
+    removedIds.forEach((id) => {
+      const flow = previousFlows[id];
+      if (!flow) return;
+      const start = flow.path[0]?.[0];
+      const end = flow.path.length ? flow.path[flow.path.length - 1][1] : undefined;
+      if (start && end) {
+        mission.markConnectivityComplete(start, end);
+      }
+    });
+    previousFlows = { ...state.flows };
+    if (removedIds.length) {
+      mission.refreshProgress();
     }
-  });
-  previousFlows = state.flows;
-  mission.refreshProgress();
+  }
+
+  if (missionNetChanged) {
+    mission.refreshProgress();
+  }
 });

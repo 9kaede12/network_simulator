@@ -3,7 +3,7 @@ import { useNet } from "@/store/netStore";
 import type { Link3D, Node3D } from "@/types/net";
 
 export default function SidePanel() {
-  const { nodes, links, flows, routingTable, selected } = useNet();
+  const { nodes, links, flows, routingTable, selected, vlans, nodeVlans, vlanColors } = useNet();
   const clearSelection = useNet((s) => s.setSelected);
   const [time, setTime] = useState(Date.now());
 
@@ -61,6 +61,9 @@ export default function SidePanel() {
             label="Position"
             value={`(${selectedNode.position.map((v) => v.toFixed(2)).join(", ")})`}
           />
+          {Array.isArray(nodeVlans[selectedNode.id]) && nodeVlans[selectedNode.id].length > 0 && (
+            <InfoLine label="VLANs" value={nodeVlans[selectedNode.id].join(", ")} />
+          )}
           {selectedNode.kind === "PC" && <InfoLine label="IP" value={selectedNode.ip ?? "-"} />}
           {selectedPorts.length > 0 && <PortsList node={selectedNode} ports={selectedPorts} />}
           <ConnectedNodesList selectedNode={selectedNode} links={selectedLinks} allNodes={nodes} />
@@ -83,27 +86,12 @@ export default function SidePanel() {
         </section>
       )}
 
-      {!selectedNode && (
+      {selectedNode && (
         <section>
           <Header title="📘 Routing Summary" top />
-          <RoutingSummary routingTable={routingTable} />
+          <RoutingSummary routingTable={routingTable} focusNodeId={selectedNode.id} />
         </section>
       )}
-
-      <section>
-        <Header title="🔗 Links" top />
-        {Object.values(links).map((l) => (
-          <div key={l.id} style={{ marginBottom: "0.35rem" }}>
-            {l.a} ⇄ {l.b} [{l.up ? "up" : "down"}] {l.bandwidthMbps} Mbps
-            {l.subnet && (
-              <div style={{ marginLeft: "0.6rem", opacity: 0.85 }}>
-                subnet: {l.subnet.network}/{l.subnet.cidr}
-              </div>
-            )}
-          </div>
-        ))}
-        {Object.keys(links).length === 0 && <EmptyLine />}
-      </section>
 
       <section>
         <Header title="📡 Flows" top />
@@ -115,6 +103,49 @@ export default function SidePanel() {
           </div>
         ))}
       </section>
+
+      {vlans.length > 0 && (
+        <section>
+          <Header title="🧩 VLANs" top />
+          {vlans.map((vlanName) => {
+            const members = Object.values(nodes).filter((n) =>
+              (nodeVlans[n.id] ?? []).includes(vlanName)
+            );
+            return (
+              <div key={vlanName} style={{ marginBottom: "0.5rem" }}>
+                <div
+                  style={{
+                    fontWeight: 600,
+                    marginBottom: "0.2rem",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 12,
+                      height: 12,
+                      borderRadius: "50%",
+                      background: vlanColors[vlanName] ?? "#00ffcc",
+                      boxShadow: "0 0 6px rgba(0,0,0,0.45)",
+                    }}
+                  />
+                  VLAN: {vlanName}
+                </div>
+                {members.length === 0 && (
+                  <div style={{ opacity: 0.7, marginLeft: "0.6rem" }}>(no members)</div>
+                )}
+                {members.map((n) => (
+                  <div key={n.id} style={{ marginLeft: "0.6rem", marginBottom: "0.15rem" }}>
+                    • {n.name} ({n.kind})
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </section>
+      )}
 
       <footer style={{ marginTop: "1.2rem", fontSize: "0.7rem", opacity: 0.6 }}>
         updated: {new Date(time).toLocaleTimeString()}
@@ -143,6 +174,16 @@ function EmptyLine() {
   return <div style={{ opacity: 0.7 }}>None</div>;
 }
 
+function cidrToMask(cidr: number): string {
+  if (cidr < 0 || cidr > 32) return "";
+  const mask = (0xffffffff << (32 - cidr)) >>> 0;
+  const a = (mask >>> 24) & 0xff;
+  const b = (mask >>> 16) & 0xff;
+  const c = (mask >>> 8) & 0xff;
+  const d = mask & 0xff;
+  return `${a}.${b}.${c}.${d}`;
+}
+
 function InfoLine({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ fontSize: "0.78rem", marginBottom: "0.25rem" }}>
@@ -165,98 +206,60 @@ function getPortsForNode(node: Node3D): string[] {
 
 function PortsList({ node, ports }: { node: Node3D; ports: string[] }) {
   const portsState = useNet((s) => s.ports);
-  const setMode = useNet((s) => s.setPortMode);
-  const setIp = useNet((s) => s.setPortIp);
-  const auto = useNet((s) => s.autoAssignIp);
-  if (!ports.length) return null;
+  const links = useNet((s) => s.links);
+  const nodes = useNet((s) => s.nodes);
   const isL3 = node.kind === "ROUTER" || node.kind === "SWITCH" || node.kind === "SERVER" || node.kind === "PC";
+  const nodeSubnets = useMemo(
+    () => Object.values(links).filter((l) => l.subnet && (l.a === node.id || l.b === node.id)),
+    [links, node.id]
+  );
+  const primarySubnet = nodeSubnets[0]?.subnet;
+  const nodeLinks = useMemo(
+    () => Object.values(links).filter((l) => l.a === node.id || l.b === node.id),
+    [links, node.id]
+  );
+  if (!ports.length) return null;
   return (
     <div style={{ marginTop: "0.6rem" }}>
       <div style={{ fontWeight: 600, fontSize: "0.8rem", marginBottom: "0.2rem" }}>Available Ports</div>
-      {ports.map((port) => {
+      {ports.map((port, idx) => {
+        // ケーブルが1本以上ある場合は、接続されているポートだけを表示
+        if (nodeLinks.length > 0 && !nodeLinks[idx]) {
+          return null;
+        }
         const cfg = portsState[node.id]?.[port] ?? { mode: "dhcp" as const };
         const ip = cfg.ip ?? "";
+        const maskText =
+          typeof cfg.maskCidr === "number"
+            ? cidrToMask(cfg.maskCidr)
+            : primarySubnet
+              ? cidrToMask(primarySubnet.cidr)
+              : undefined;
+        const statusLabel = (() => {
+          if (nodeLinks.length === 0) {
+            return "";
+          }
+          const link = nodeLinks[idx];
+          if (!link) return "";
+          const peerId = link.a === node.id ? link.b : link.a;
+          const peerName = nodes[peerId]?.name ?? peerId;
+          return ` (connected to ${peerName})`;
+        })();
         return (
           <div key={port} style={{ marginBottom: "0.35rem" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-              <div style={{ minWidth: 64 }}>• {port}</div>
-              {isL3 && (
-                <div style={{ display: "flex", gap: 4 }}>
-                  <button
-                    type="button"
-                    onClick={() => setMode(node.id, port, "dhcp")}
-                    style={{
-                      padding: "0.15rem 0.35rem",
-                      borderRadius: 4,
-                      border: "1px solid rgba(0,255,204,0.35)",
-                      background: cfg.mode === "dhcp" ? "rgba(0,255,204,0.25)" : "transparent",
-                      color: "#00ffcc",
-                      cursor: "pointer",
-                      fontFamily: "inherit",
-                      fontSize: "0.72rem",
-                    }}
-                  >
-                    DHCP
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMode(node.id, port, "static")}
-                    style={{
-                      padding: "0.15rem 0.35rem",
-                      borderRadius: 4,
-                      border: "1px solid rgba(0,255,204,0.35)",
-                      background: cfg.mode === "static" ? "rgba(0,255,204,0.25)" : "transparent",
-                      color: "#00ffcc",
-                      cursor: "pointer",
-                      fontFamily: "inherit",
-                      fontSize: "0.72rem",
-                    }}
-                  >
-                    Static
-                  </button>
-                </div>
-              )}
+              <div style={{ minWidth: 64 }}>• {port}{statusLabel}</div>
             </div>
             {isL3 && cfg.mode === "static" && (
-              <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", marginTop: "0.25rem", marginLeft: "1.2rem" }}>
-                <input
-                  type="text"
-                  value={ip}
-                  onChange={(e) => setIp(node.id, port, e.currentTarget.value)}
-                  placeholder="192.168.0.10"
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    background: "black",
-                    color: "#00ffcc",
-                    border: "1px solid rgba(0,255,204,0.35)",
-                    borderRadius: 4,
-                    padding: "0.2rem 0.35rem",
-                    fontFamily: "monospace",
-                    fontSize: "0.78rem",
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => auto(node.id, port)}
-                  style={{
-                    padding: "0.2rem 0.45rem",
-                    borderRadius: 4,
-                    border: "1px solid rgba(0,255,204,0.35)",
-                    background: "rgba(0,0,0,0.4)",
-                    color: "#00ffcc",
-                    cursor: "pointer",
-                    fontFamily: "inherit",
-                    fontSize: "0.72rem",
-                  }}
-                >
-                  Auto
-                </button>
+              <div style={{ marginTop: "0.25rem", marginLeft: "1.2rem", opacity: 0.8, fontSize: "0.72rem" }}>
+                IP: {ip || "-"}
+                {maskText && ` / ${maskText}`}
               </div>
             )}
             {isL3 && cfg.mode === "dhcp" && (
               <div style={{ marginTop: "0.15rem", marginLeft: "1.2rem", opacity: 0.75, fontSize: "0.72rem" }}>
-                IP: assigned by DHCP
+                IP: {ip || "-"}
+                {maskText && ` / ${maskText}`}
               </div>
             )}
           </div>
@@ -286,12 +289,14 @@ function ConnectedNodesList({
         const peerDisplay = peerNode ? `${peerNode.name} (${peerNode.kind})` : peerId;
         return (
           <div key={link.id} style={{ marginBottom: "0.2rem" }}>
-            • {peerDisplay}
-            {link.subnet && (
-              <span style={{ marginLeft: 6, opacity: 0.85 }}>
-                [{link.subnet.network}/{link.subnet.cidr}]
-              </span>
-            )}
+            <div>
+              • {peerDisplay}
+              {link.subnet && (
+                <span style={{ marginLeft: 6, opacity: 0.85 }}>
+                  (mask: {cidrToMask(link.subnet.cidr)})
+                </span>
+              )}
+            </div>
           </div>
         );
       })}
@@ -304,8 +309,18 @@ function ConnectedNodesList({
 
 type RoutingTable = Record<string, { dest: string; nextHop: string }[]>;
 
-function RoutingSummary({ routingTable }: { routingTable: RoutingTable }) {
-  const entries = Object.entries(routingTable ?? {});
+function RoutingSummary({
+  routingTable,
+  focusNodeId,
+}: {
+  routingTable: RoutingTable;
+  focusNodeId?: string;
+}) {
+  const entries = focusNodeId
+    ? focusNodeId in routingTable
+      ? [[focusNodeId, routingTable[focusNodeId] ?? []] as const]
+      : [[focusNodeId, []] as const]
+    : Object.entries(routingTable ?? {});
   if (entries.length === 0) return <div>No routing data.</div>;
 
   return (

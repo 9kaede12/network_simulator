@@ -8,6 +8,11 @@ export default function NodeIsland({ node }: { node: Node3D }) {
   const setSel = useNet((s) => s.setSelected);
   const setCliNode = useNet((s) => s.setCliNode);
   const selected = useNet((s) => s.selected);
+  const nodeVlansMap = useNet((s) => s.nodeVlans);
+  const vlanColors = useNet((s) => s.vlanColors);
+  const nodeVlans = useMemo(() => nodeVlansMap[node.id] || [], [nodeVlansMap, node.id]);
+  const activeVlanName = useNet((s) => s.activeVlanName);
+  const assignVlanToNode = useNet((s) => s.assignVlanToNode);
   const [hovered, setHovered] = useState(false);
 
   const baseColor = useMemo(
@@ -22,6 +27,10 @@ export default function NodeIsland({ node }: { node: Node3D }) {
       )[node.kind],
     [node.kind]
   );
+  const vlanColor = useMemo(() => {
+    const first = nodeVlans[0];
+    return first ? vlanColors[first] : undefined;
+  }, [nodeVlans, vlanColors]);
   const isActive = selected.nodeId === node.id;
   const isMoving = selected.mode === "moving" && isActive;
   const position: [number, number, number] = [
@@ -34,6 +43,9 @@ export default function NodeIsland({ node }: { node: Node3D }) {
 
   const onClick = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
+    if (activeVlanName) {
+      assignVlanToNode(node.id, activeVlanName);
+    }
     setSel({ nodeId: node.id, linkId: undefined, mode: "idle" });
     setCliNode(node.id);
   };
@@ -41,7 +53,8 @@ export default function NodeIsland({ node }: { node: Node3D }) {
   const showMenu = useNet((s) => s.showContextMenu);
   const onContextMenu = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
-    e.preventDefault();
+    // ThreeEvent 側の preventDefault 型定義がないため nativeEvent を直接呼ぶ
+    e.nativeEvent.preventDefault();
     showMenu(node.id, e.nativeEvent.clientX, e.nativeEvent.clientY);
   };
 
@@ -54,7 +67,7 @@ export default function NodeIsland({ node }: { node: Node3D }) {
       >
         <cylinderGeometry args={[0.9, 1.0, 0.4, 24]} />
         <meshStandardMaterial
-          color={baseColor}
+          color={vlanColor ?? baseColor}
           metalness={0.2}
           roughness={0.6}
           emissive={emissive}

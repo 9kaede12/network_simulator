@@ -58,6 +58,22 @@ const COMMAND_DEFINITIONS: CommandDefinition[] = [
     group: { node: "共通", section: "インターフェース操作" },
   },
   {
+    id: "switchportModeAccess",
+    command: "switchport mode access",
+    description: "ポートをアクセスポートに設定",
+    patterns: [["switchport", "mode", "access"]],
+    modes: ["interface"],
+    group: { node: "スイッチ", section: "スイッチポート/トランク" },
+  },
+  {
+    id: "switchportAccessVlan",
+    command: "switchport access vlan <ID>",
+    description: "アクセスポートの所属VLANを指定",
+    patterns: [["switchport", "access", "vlan"]],
+    modes: ["interface"],
+    group: { node: "スイッチ", section: "スイッチポート/トランク" },
+  },
+  {
     id: "interfaceVlan",
     command: "interface vlan <ID>",
     description: "VLANインターフェースを編集",
@@ -200,7 +216,18 @@ const COMMAND_DEFINITIONS: CommandDefinition[] = [
     id: "vtpBase",
     command: "vtp ...",
     description: "VTPモード/ドメイン/パスワード等を設定",
-    patterns: [["vtp"]],
+    patterns: [
+      ["vtp"],
+      ["vtp", "mode"],
+      ["vtp", "mode", "server"],
+      ["vtp", "mode", "client"],
+      ["vtp", "mode", "transparent"],
+      ["vtp", "mode", "off"],
+      ["vtp", "domain"],
+      ["vtp", "password"],
+      ["vtp", "pruning"],
+      ["vtp", "version"],
+    ],
     modes: ["privileged", "config", "interface"],
     group: { node: "スイッチ", section: "VTP" },
   },
@@ -601,6 +628,11 @@ const formatVtpStatusLines = (cfg: SwitchVlanConfig) => {
   return lines;
 };
 
+const markCommandProgress = (condition?: string) => {
+  if (!condition) return;
+  useMission.getState().setFlag(`cmd:${condition}`, true);
+};
+
 type WSMessage =
   | { event: "log"; message: string; origin?: string }
   | { event: "flow"; from: string; to: string; proto?: "ICMP" | "TCP" | "UDP" }
@@ -613,9 +645,10 @@ type NodeConsoleProps = {
   nodeName: string;
   logs: string[];
   appendLog(nodeId: string, entry: string): void;
+  emitLocalFlow(from: string, to: string, proto?: "ICMP" | "TCP" | "UDP"): void;
 };
 
-function NodeConsole({ nodeId, nodeName, logs, appendLog }: NodeConsoleProps) {
+function NodeConsole({ nodeId, nodeName, logs, appendLog, emitLocalFlow }: NodeConsoleProps) {
   const node = useNet((s) => s.nodes[nodeId]);
   const links = useNet((s) => s.links);
   const portsState = useNet((s) => s.ports);
@@ -664,7 +697,7 @@ function NodeConsole({ nodeId, nodeName, logs, appendLog }: NodeConsoleProps) {
     });
     return map;
   }, [basePorts, nodeLinks]);
-  const portConfig = portsState[nodeId] ?? {};
+  const portConfig = useMemo(() => portsState[nodeId] ?? {}, [portsState, nodeId]);
 
   const promptLabel = useMemo(() => {
     const base = nodeName;
@@ -724,9 +757,15 @@ function NodeConsole({ nodeId, nodeName, logs, appendLog }: NodeConsoleProps) {
       type Candidate = { text: string; hasMore: boolean };
       let candidates: Candidate[] = [];
     if (interfaceContext) {
-      candidates = availablePorts
+      const portCandidates = availablePorts
         .filter((port) => port.toLowerCase().startsWith(fragmentLower))
         .map((port) => ({ text: port, hasMore: false }));
+      const vlanKeyword = node?.kind === "SWITCH" ? "vlan" : null;
+      const vlanCandidates =
+        vlanKeyword && vlanKeyword.startsWith(fragmentLower)
+          ? [{ text: "vlan", hasMore: true }]
+          : [];
+      candidates = [...portCandidates, ...vlanCandidates];
     } else {
       const lowerPrefixes = prefixTokens.map((token) => token.toLowerCase());
       CLI_COMPLETION_PATTERNS.forEach((pattern) => {
@@ -786,7 +825,7 @@ function NodeConsole({ nodeId, nodeName, logs, appendLog }: NodeConsoleProps) {
       inputEl.value = newValue;
       inputEl.setSelectionRange(nextCaret, nextCaret);
     },
-    [availablePorts, cliMode, printLocal]
+    [availablePorts, cliMode, printLocal, node?.kind]
   );
 
   const handleInternalCommand = useCallback(
@@ -967,7 +1006,7 @@ function NodeConsole({ nodeId, nodeName, logs, appendLog }: NodeConsoleProps) {
           printLocal(`無効なIPです: ${ipStr}`);
           return true;
         }
-        let cidr = maskStr.includes(".") ? maskToCidr(maskStr) : Number(maskStr);
+        const cidr = maskStr.includes(".") ? maskToCidr(maskStr) : Number(maskStr);
         if (typeof cidr === "undefined" || Number.isNaN(cidr) || cidr < 0 || cidr > 32) {
           printLocal(`無効なマスクです: ${maskStr}`);
           return true;
@@ -977,6 +1016,13 @@ function NodeConsole({ nodeId, nodeName, logs, appendLog }: NodeConsoleProps) {
         setPortMask(node.id, activeInterface, cidr);
         const maskText = cidrToMask(cidr);
         printLocal(`${activeInterface} に ${ipStr} ${maskText} を設定しました`);
+        if (
+          activeInterface.toLowerCase() === "vlan10" &&
+          ipStr === "192.168.10.1" &&
+          maskText === "255.255.255.0"
+        ) {
+          markCommandProgress("tutorial_svi_configured");
+        }
         return true;
       }
 
@@ -1090,6 +1136,7 @@ function NodeConsole({ nodeId, nodeName, logs, appendLog }: NodeConsoleProps) {
           const option = lowerTokens[showVlanMatch];
           if (!option || option === "brief") {
             printLocal(formatVlanTable(cfgSnapshot));
+            markCommandProgress("tutorial_vlan_verified");
           } else if (option === "summary") {
             printLocal(formatVlanTable(cfgSnapshot, "summary"));
           } else if (option === "private-vlan") {
@@ -1170,6 +1217,7 @@ function NodeConsole({ nodeId, nodeName, logs, appendLog }: NodeConsoleProps) {
             cfg.vtp.mode = "server";
           });
           printLocal("このスイッチをVTPプライマリサーバに設定しました");
+          markCommandProgress("tutorial_vtp_configured");
           return true;
         }
         const noVtpPruningMatch = matchCommand(COMMAND_PATTERN_MAP.noVtpPruning);
@@ -1178,6 +1226,7 @@ function NodeConsole({ nodeId, nodeName, logs, appendLog }: NodeConsoleProps) {
             cfg.vtp.pruning = false;
           });
           printLocal("VTPプルーニングを無効化しました");
+          markCommandProgress("tutorial_vtp_configured");
           return true;
         }
         const vtpGeneralMatch = matchCommand(COMMAND_PATTERN_MAP.vtpBase);
@@ -1212,6 +1261,7 @@ function NodeConsole({ nodeId, nodeName, logs, appendLog }: NodeConsoleProps) {
               }
             });
             printLocal(`VTPモードを ${targetMode} (${describeScope}) に設定しました`);
+            markCommandProgress("tutorial_vtp_configured");
             return true;
           }
           if (action === "domain") {
@@ -1229,6 +1279,7 @@ function NodeConsole({ nodeId, nodeName, logs, appendLog }: NodeConsoleProps) {
               }
             });
             printLocal(`VTPドメインを ${domainName} (${describeScope}) に設定しました`);
+            markCommandProgress("tutorial_vtp_configured");
             return true;
           }
           if (action === "password") {
@@ -1246,6 +1297,7 @@ function NodeConsole({ nodeId, nodeName, logs, appendLog }: NodeConsoleProps) {
               }
             });
             printLocal(`VTPパスワードを設定しました (${describeScope})`);
+            markCommandProgress("tutorial_vtp_configured");
             return true;
           }
           if (action === "pruning") {
@@ -1258,6 +1310,7 @@ function NodeConsole({ nodeId, nodeName, logs, appendLog }: NodeConsoleProps) {
               }
             });
             printLocal(`VTPプルーニングを有効化しました (${describeScope})`);
+            markCommandProgress("tutorial_vtp_configured");
             return true;
           }
           if (action === "version") {
@@ -1276,6 +1329,7 @@ function NodeConsole({ nodeId, nodeName, logs, appendLog }: NodeConsoleProps) {
               }
             });
             printLocal(`VTPバージョンを ${version} に設定しました (${describeScope})`);
+            markCommandProgress("tutorial_vtp_configured");
             return true;
           }
           printLocal("サポートされていない vtp サブコマンドです");
@@ -1324,6 +1378,9 @@ function NodeConsole({ nodeId, nodeName, logs, appendLog }: NodeConsoleProps) {
           });
           ids.forEach((id) => addVlanName(`VLAN ${id}`));
           printLocal(`VLAN ${ids.join(",")} を ${vlanName ? `名称 ${vlanName} で` : ""}定義しました`);
+          if (ids.includes(10)) {
+            markCommandProgress("tutorial_vlan_created");
+          }
           return true;
         }
         const pvlanPrimaryMatch = matchCommand(COMMAND_PATTERN_MAP.privateVlanPrimary);
@@ -1427,6 +1484,43 @@ function NodeConsole({ nodeId, nodeName, logs, appendLog }: NodeConsoleProps) {
           );
           return true;
         }
+        const switchportModeAccessMatch = matchCommand(COMMAND_PATTERN_MAP.switchportModeAccess);
+        if (switchportModeAccessMatch !== null) {
+          const iface = ensureInterfaceContext();
+          if (!iface) return true;
+          updateSwitchConfig(node.id, (cfg) => {
+            const portCfg = ensureSwitchportConfig(cfg, iface);
+            portCfg.mode = "access";
+            if (typeof portCfg.accessVlan === "undefined") {
+              portCfg.accessVlan = 1;
+            }
+          });
+          printLocal(`switchport ${iface} を access モードに設定しました`);
+          return true;
+        }
+
+        const switchportAccessVlanMatch = matchCommand(COMMAND_PATTERN_MAP.switchportAccessVlan);
+        if (switchportAccessVlanMatch !== null) {
+          const iface = ensureInterfaceContext();
+          if (!iface) return true;
+          const vlanToken = rawTokens[switchportAccessVlanMatch];
+          const vlanId = parseVlanId(vlanToken);
+          if (vlanId === null) {
+            printLocal("使い方: switchport access vlan <ID>");
+            return true;
+          }
+          updateSwitchConfig(node.id, (cfg) => {
+            const portCfg = ensureSwitchportConfig(cfg, iface);
+            portCfg.mode = "access";
+            portCfg.accessVlan = vlanId;
+          });
+          printLocal(`switchport ${iface} の access VLAN を ${vlanId} に設定しました`);
+          if (vlanId === 10) {
+            markCommandProgress("tutorial_ports_assigned");
+          }
+          return true;
+        }
+
         const switchportModePvlanMatch = matchCommand(COMMAND_PATTERN_MAP.switchportModePrivateVlan);
         if (switchportModePvlanMatch !== null) {
           const iface = ensureInterfaceContext();
@@ -1579,6 +1673,16 @@ function NodeConsole({ nodeId, nodeName, logs, appendLog }: NodeConsoleProps) {
         return true;
       }
 
+      const isVtpConfig =
+        lowerTokens[0] === "vtp" || (lowerTokens[0] === "no" && lowerTokens[1] === "vtp");
+      if (isVtpConfig) {
+        if (cliMode !== "config") {
+          printLocal("VTP 設定はグローバルコンフィグレーションモードで実行してください (configure terminal)。");
+          return true;
+        }
+        return false; // config モードではバックエンドに委譲
+      }
+
       const helpMatch = matchCommand(COMMAND_PATTERN_MAP.help);
       if (helpMatch !== null || trimmed === "?") {
         printLocal([
@@ -1603,7 +1707,6 @@ function NodeConsole({ nodeId, nodeName, logs, appendLog }: NodeConsoleProps) {
       cliMode,
       linkByPort,
       node,
-      nodeId,
       portConfig,
       printLocal,
       setPortIp,
@@ -1622,6 +1725,10 @@ function NodeConsole({ nodeId, nodeName, logs, appendLog }: NodeConsoleProps) {
     const value = inputRef.current?.value.trim();
     if (!value) return;
     appendLog(nodeId, `${promptLabel} ${value}`);
+    const pingMatch = value.match(/^ping\s+(\S+)/i);
+    if (pingMatch) {
+      emitLocalFlow(nodeId, pingMatch[1], "ICMP");
+    }
     const handledLocally = handleInternalCommand(value);
     if (!handledLocally) {
       sendCommand(value, nodeId);
@@ -1777,10 +1884,62 @@ export default function CLIConsole() {
   const currentMission = useMission((s) => s.current);
   const missionFlags = useMission((s) => s.flags);
   const pendingReplies = useRef<Record<string, PendingReply>>({});
+  const recentFlowRef = useRef<Map<string, number>>(new Map());
+
+  const emitFlow = useCallback(
+    (fromLabel: string, toLabel: string, proto: "ICMP" | "TCP" | "UDP" = "ICMP") => {
+      const state = useNet.getState();
+      const resolveNodeId = (label: string) => {
+        const lower = label.toLowerCase();
+        const entry = Object.values(state.nodes).find(
+          (n) => n.id.toLowerCase() === lower || (n.name && n.name.toLowerCase() === lower)
+        );
+        return entry?.id;
+      };
+      const fromId = resolveNodeId(fromLabel) ?? (state.nodes[fromLabel] ? fromLabel : undefined);
+      const toId = resolveNodeId(toLabel) ?? (state.nodes[toLabel] ? toLabel : undefined);
+      if (!fromId || !toId) return;
+
+      const key = `${fromId}|${toId}|${proto}`;
+      const now = Date.now();
+      const last = recentFlowRef.current.get(key);
+      if (last && now - last < 1200) return;
+      recentFlowRef.current.set(key, now);
+      // 古いキーを掃除（念のため）
+      recentFlowRef.current.forEach((ts, k) => {
+        if (now - ts > 5000) recentFlowRef.current.delete(k);
+      });
+
+      const hops = state.getPath(fromId, toId);
+      const path: [string, string][] =
+        hops.length >= 2
+          ? hops.slice(0, -1).map((node, idx) => [node, hops[idx + 1]] as [string, string])
+          : [[fromId, toId]];
+
+      addFlow({
+        id: `flow_${now}`,
+        path,
+        progress: 0,
+        proto,
+      });
+      useMission.getState().recordConnectivity(fromId, toId);
+      playPing();
+    },
+    [addFlow]
+  );
 
   useEffect(() => {
     nodeIdsRef.current = nodeIds;
   }, [nodeIds]);
+
+  useEffect(() => {
+    // ミッションが変わったら CLI 状態を初期化
+    setLogsByNode({});
+    setCliNode(undefined);
+    setSelection({ mode: "idle", nodeId: undefined, linkId: undefined });
+    setShowCommandList(false);
+    setCommandListSection(undefined);
+  }, [currentMission?.id, setCliNode, setSelection]);
 
   useEffect(() => {
     setLogsByNode((prev) => {
@@ -1855,8 +2014,12 @@ export default function CLIConsole() {
 
   useEffect(() => {
     connectWS();
-    const unsubscribe = onMessage((msg: WSMessage) => {
-      if (msg.event === "log") {
+    const unsubscribe = onMessage((raw) => {
+      if (!raw || typeof raw !== "object" || !("event" in raw)) return;
+      const msg = raw as Partial<WSMessage> & { event?: unknown };
+      if (typeof msg.event !== "string") return;
+
+      if (msg.event === "log" && typeof msg.message === "string") {
         const replyMatch = msg.message.match(/Reply received from\s+(\S+)/);
         if (replyMatch && currentMission) {
           const target = replyMatch[1];
@@ -1865,39 +2028,34 @@ export default function CLIConsole() {
             pendingReplies.current[info.storageKey] = {
               flagKey: info.flagKey,
               message: msg.message,
-              nodeId: msg.origin,
+              nodeId: typeof msg.origin === "string" ? msg.origin : undefined,
             };
             return;
           }
         }
-        if (msg.origin) {
+        if (typeof msg.origin === "string") {
           appendLog(msg.origin, msg.message);
         } else {
           broadcastLog(msg.message);
         }
-      } else if (msg.event === "flow") {
-        addFlow({
-          id: `flow_${Date.now()}`,
-          path: [[msg.from, msg.to]],
-          progress: 0,
-          proto: msg.proto ?? "ICMP",
-        });
-        useMission.getState().recordConnectivity(msg.from, msg.to);
-        playPing();
+      } else if (msg.event === "flow" && typeof msg.from === "string" && typeof msg.to === "string") {
+        emitFlow(msg.from, msg.to, msg.proto ?? "ICMP");
       } else if (msg.event === "mission_update") {
-        if (msg.goal && !(msg.flag && msg.flag.includes("complete"))) {
-          broadcastLog(`MISSION: ${msg.goal}`);
+        const goal = typeof msg.goal === "string" ? msg.goal : undefined;
+        const flag = typeof msg.flag === "string" ? msg.flag : undefined;
+        if (goal && !(flag && flag.includes("complete"))) {
+          broadcastLog(`MISSION: ${goal}`);
         }
-        if (msg.flag) {
-          useMission.getState().setFlag(msg.flag, true);
-          if (msg.flag.includes("complete")) {
+        if (flag) {
+          useMission.getState().setFlag(flag, true);
+          if (flag.includes("complete")) {
             playMissionComplete();
           }
         }
       }
     });
     return unsubscribe;
-  }, [addFlow, appendLog, broadcastLog, currentMission]);
+  }, [appendLog, broadcastLog, currentMission, emitFlow]);
 
   const completionLogged = useRef(false);
   useEffect(() => {
@@ -2014,7 +2172,7 @@ export default function CLIConsole() {
                     marginBottom: "0.5rem",
                   }}
                 >
-                  <div style={{ fontWeight: 600, fontSize: "1.1rem" }}>実行できるコマンド</div>
+                  <div style={{ fontWeight: 600, fontSize: "1.35rem" }}>実行できるコマンド</div>
                   <button
                     type="button"
                     onClick={() => setShowCommandList(false)}
@@ -2023,8 +2181,8 @@ export default function CLIConsole() {
                       border: "1px solid rgba(0, 255, 204, 0.5)",
                       color: "#00ffcc",
                       borderRadius: 6,
-                      fontSize: "0.85rem",
-                      padding: "0.2rem 0.75rem",
+                      fontSize: "1rem",
+                      padding: "0.28rem 0.95rem",
                       cursor: "pointer",
                     }}
                   >
@@ -2059,7 +2217,7 @@ export default function CLIConsole() {
                             background: active ? "rgba(0,255,204,0.2)" : "transparent",
                             color: "#00ffcc",
                             fontFamily: "monospace",
-                            fontSize: "0.8rem",
+                            fontSize: "1rem",
                             cursor: "pointer",
                           }}
                         >
@@ -2092,7 +2250,7 @@ export default function CLIConsole() {
                             background: active ? "rgba(102,255,204,0.2)" : "transparent",
                             color: "#66ffcc",
                             fontFamily: "monospace",
-                            fontSize: "0.76rem",
+                            fontSize: "0.95rem",
                             cursor: "pointer",
                           }}
                         >
@@ -2104,13 +2262,13 @@ export default function CLIConsole() {
                 )}
                 <div
                   style={{
-                    fontSize: "0.85rem",
-                    lineHeight: 1.5,
+                    fontSize: "1.05rem",
+                    lineHeight: 1.6,
                     flex: 1,
                     overflowY: "auto",
                     border: "1px solid rgba(0,255,204,0.25)",
                     borderRadius: 8,
-                    padding: "0.8rem",
+                    padding: "1rem",
                     background: "rgba(0,0,0,0.35)",
                   }}
                 >
@@ -2179,10 +2337,12 @@ export default function CLIConsole() {
                 }}
               >
                 <NodeConsole
+                  key={`${currentMission?.id ?? "none"}-${node.id}`}
                   nodeId={node.id}
                   nodeName={node.name ?? node.id}
                   logs={logsByNode[node.id] ?? []}
                   appendLog={appendLog}
+                  emitLocalFlow={emitFlow}
                 />
               </div>
             ))}

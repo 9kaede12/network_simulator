@@ -1,5 +1,5 @@
 let socket: WebSocket | null = null;
-const listeners = new Set<(msg: any) => void>();
+const listeners = new Set<(msg: unknown) => void>();
 const pendingMessages: string[] = [];
 let reconnectTimer: number | null = null;
 const WS_URL = "ws://localhost:8000/ws";
@@ -30,10 +30,10 @@ function setupSocket() {
 
   socket.onmessage = (event) => {
     try {
-      const msg = JSON.parse(event.data);
+      const msg: unknown = JSON.parse(event.data);
       listeners.forEach((fn) => fn(msg));
     } catch (err) {
-      console.error("[WS] Invalid message", event.data);
+      console.error("[WS] Invalid message", event.data, err);
     }
   };
 
@@ -61,7 +61,7 @@ export function connectWS() {
   return socket;
 }
 
-export function onMessage(fn: (msg: any) => void) {
+export function onMessage(fn: (msg: unknown) => void) {
   listeners.add(fn);
   return () => {
     listeners.delete(fn);

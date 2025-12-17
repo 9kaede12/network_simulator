@@ -15,7 +15,7 @@ export default function NodeDragger() {
   const getNetState = useNet.getState;
 
   useEffect(() => {
-    function screenToRay(e: PointerEvent) {
+    function screenToRay(e: { clientX: number; clientY: number }) {
       const { clientWidth, clientHeight } = gl.domElement;
       mouse.current.set((e.clientX / clientWidth) * 2 - 1, -(e.clientY / clientHeight) * 2 + 1);
       ray.current.setFromCamera(mouse.current, camera);
@@ -77,6 +77,14 @@ export default function NodeDragger() {
       }
 
       const net = getNetState();
+      // VLAN が選択されている場合は、このノードをその VLAN に所属させる
+      if (net.activeVlanName && dragNode.current) {
+        if (node?.kind === "ROUTER") {
+          net.setRouterVlanWarning(true);
+        } else {
+          net.assignVlanToNode(dragNode.current, net.activeVlanName);
+        }
+      }
       net.setSelected({ mode: "moving", nodeId: dragNode.current ?? undefined, linkId: undefined });
       // クリック開始時点でCLIのアクティブノードも切り替える
       net.setCliNode(dragNode.current ?? undefined);
@@ -116,16 +124,27 @@ export default function NodeDragger() {
     }
 
     const opts: AddEventListenerOptions = { capture: true };
+    const onContextMenu = (e: MouseEvent) => {
+      screenToRay(e);
+      const hit = pickNode();
+      if (!hit) return;
+      e.preventDefault();
+      const nodeId = hit.object.userData.nodeId as string;
+      getNetState().showContextMenu(nodeId, e.clientX, e.clientY);
+    };
+
     gl.domElement.addEventListener("pointerdown", onPointerDown, opts);
+    gl.domElement.addEventListener("contextmenu", onContextMenu);
     gl.domElement.addEventListener("pointermove", onPointerMove, opts);
     window.addEventListener("pointerup", onPointerUp, opts);
 
     return () => {
       gl.domElement.removeEventListener("pointerdown", onPointerDown, opts);
+      gl.domElement.removeEventListener("contextmenu", onContextMenu);
       gl.domElement.removeEventListener("pointermove", onPointerMove, opts);
       window.removeEventListener("pointerup", onPointerUp, opts);
     };
-  }, [camera, gl, scene]);
+  }, [camera, gl, scene, setNodes, getNetState]);
 
   return null;
 }
