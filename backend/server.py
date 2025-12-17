@@ -1,20 +1,34 @@
 import asyncio
 import json
+import os
 from typing import Any, Dict
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from vtp import handle_vtp_config_command, handle_vtp_show_command
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # 本番環境では具体的なURLに変更推奨
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 静的ファイル配信（フロントエンド用）
+if os.path.exists("dist"):
+    app.mount("/assets", StaticFiles(directory="dist/assets"), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        file_path = f"dist/{full_path}"
+        if os.path.exists(file_path) and os.path.isfile(file_path):
+            return FileResponse(file_path)
+        return FileResponse("dist/index.html")
 
 
 async def send_event(ws: WebSocket, payload: Dict[str, Any]) -> None:
