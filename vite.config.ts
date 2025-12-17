@@ -7,7 +7,12 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'), // ←これを追加！
+      '@': path.resolve(__dirname, './src'),
     },
+  },
+  // ✅ ビルド出力先を明示的に指定
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true,
   },
 })

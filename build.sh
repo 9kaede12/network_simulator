@@ -7,4 +7,14 @@ pip install -r backend/requirements.txt
 npm install
 npm run build
 
+# distフォルダの確認とデバッグ
+echo "=== Checking dist directory ==="
+ls -la
+if [ -d "dist" ]; then
+    echo "✅ dist directory exists"
+    ls -la dist/
+else
+    echo "❌ dist directory not found"
+fi
+
 echo "Build completed successfully!"
