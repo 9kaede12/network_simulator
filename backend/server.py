@@ -4,6 +4,7 @@ from typing import Any, Dict
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from vtp import handle_vtp_config_command, handle_vtp_show_command
 
 app = FastAPI()
 
@@ -34,14 +35,26 @@ async def websocket_endpoint(ws: WebSocket):
                 continue
 
             command = msg.get("command", "").strip()
+            origin = (msg.get("node") or "PC1").strip() or "PC1"
+            device_id = origin or "default-device"
             if not command:
                 await send_event(ws, {"event": "log", "message": "Empty command"})
                 continue
 
-            if command.startswith("ping"):
+            command_lower = command.lower()
+
+            if command_lower.startswith("vtp ") or command_lower == "vtp pruning":
+                response = handle_vtp_config_command(device_id, command)
+                await send_event(ws, {"event": "log", "message": response, "origin": origin})
+            elif command_lower.startswith("no vtp pruning"):
+                response = handle_vtp_config_command(device_id, command)
+                await send_event(ws, {"event": "log", "message": response, "origin": origin})
+            elif command_lower.startswith("show vtp"):
+                response = handle_vtp_show_command(device_id, command)
+                await send_event(ws, {"event": "log", "message": response, "origin": origin})
+            elif command_lower.startswith("ping"):
                 parts = command.split()
                 target = parts[1] if len(parts) > 1 else "R1"
-                origin = (msg.get("node") or "PC1").strip() or "PC1"
                 await send_event(
                     ws,
                     {
@@ -70,7 +83,6 @@ async def websocket_endpoint(ws: WebSocket):
                     },
                 )
             else:
-                origin = (msg.get("node") or "PC1").strip() or "PC1"
                 await send_event(
                     ws,
                     {

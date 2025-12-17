@@ -1,18 +1,22 @@
 import CanvasRoot from "@/canvas/CanvasRoot";
 import { useNet } from "@/store/netStore";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import CLIConsole from "@/ui/CLIConsole";
 import SidePanel from "@/ui/SidePanel";
 import MissionPanel from "@/ui/MissionPanel";
 import { playWaveLoop } from "@/lib/sound";
 import NodePalette from "@/ui/NodePalette";
-import SubnetPalette from "@/ui/SubnetPalette";
 import NodeContextMenu from "@/ui/NodeContextMenu";
+import IpConfigDialog from "@/ui/IpConfigDialog";
+import StartScreen from "@/ui/StartScreen";
+import { useMission } from "@/store/missionStore";
 
 export default function App() {
   const addNode = useNet((s) => s.addNode);
   const addLink = useNet((s) => s.addLink);
   const recomputeRouting = useNet((s) => s.recomputeRouting);
+  const setMission = useMission((s) => s.setMission);
+  const [started, setStarted] = useState(false);
 
   useEffect(() => {
     addNode({ id: "PC1", kind: "PC", name: "PC1", position: [-4, 0, 0] });
@@ -38,13 +42,26 @@ export default function App() {
         overflow: "hidden",
       }}
     >
-      <CanvasRoot />
-      <NodePalette />
-      <SubnetPalette />
-      <NodeContextMenu />
-      <CLIConsole />
-      <SidePanel />
-      <MissionPanel />
+      {started && (
+        <>
+          <CanvasRoot />
+          <NodePalette />
+          <NodeContextMenu />
+          <IpConfigDialog />
+          <CLIConsole />
+          <SidePanel />
+          <MissionPanel />
+        </>
+      )}
+      {!started && (
+        <StartScreen
+          onStartFree={() => setStarted(true)}
+          onStartTutorial={() => {
+            setStarted(true);
+            setMission("tutorial_nodes");
+          }}
+        />
+      )}
     </div>
   );
 }
