@@ -5,7 +5,11 @@ import { useShallow } from "zustand/react/shallow";
 import { playMissionComplete } from "@/lib/sound";
 import { missions } from "@/missions/missions";
 
-export default function MissionPanel() {
+type MissionPanelProps = {
+  onCompleteTutorial?: () => void;
+};
+
+export default function MissionPanel({ onCompleteTutorial }: MissionPanelProps) {
   const { current, progress } = useMission(
     useShallow((state) => ({ current: state.current, progress: state.progress }))
   );
@@ -303,9 +307,57 @@ export default function MissionPanel() {
               </ol>
             </div>
           )}
-          <div style={{ marginBottom: "0.8rem" }}>
-            <MissionButton onClick={resetMission}>← ミッション一覧に戻る</MissionButton>
-          </div>
+          {current.id === "vlan_isolation" && (
+            <div style={{ marginBottom: "0.8rem", fontSize: "0.78rem", lineHeight: 1.5 }}>
+              <div style={{ marginBottom: 4, opacity: 0.9 }}>手順:</div>
+              <ol style={{ paddingLeft: "1.1rem", margin: 0 }}>
+                <li>
+                  <span style={{ opacity: 0.85 }}>[SW1 のユーザEXEC → 特権EXEC → グローバルコンフィグ]</span> へ:
+                  <div style={{ marginLeft: "0.6rem" }}>
+                    <code>enable</code>
+                    <br />
+                    <code>conf t</code>
+                  </div>
+                </li>
+                <li>
+                  VLAN 10 を作成:
+                  <div style={{ marginLeft: "0.6rem" }}>
+                    <code>vlan 10</code>
+                  </div>
+                </li>
+                <li>
+                  PC1 が接続されているポート（例: <code>Fa0/1</code>）を VLAN 10 に設定:
+                  <div style={{ marginLeft: "0.6rem" }}>
+                    <code>interface Fa0/1</code>
+                    <br />
+                    <code>switchport mode access</code>
+                    <br />
+                    <code>switchport access vlan 10</code>
+                  </div>
+                </li>
+                <li>
+                  <span style={{ opacity: 0.85 }}>[特権EXEC]</span> に戻る:
+                  <div style={{ marginLeft: "0.6rem" }}>
+                    <code>end</code>
+                  </div>
+                </li>
+                <li>
+                  <span style={{ opacity: 0.85 }}>[PC1 のユーザEXEC]</span> から PC2 へ ping を実行して分離を確認:
+                  <div style={{ marginLeft: "0.6rem" }}>
+                    <code>ping PC2</code>
+                  </div>
+                  <div style={{ marginLeft: "0.6rem", marginTop: "0.3rem", opacity: 0.85, fontSize: "0.75rem" }}>
+                    ※ PC2 はデフォルトの VLAN 1 のままなので、ping が失敗するはずです
+                  </div>
+                </li>
+              </ol>
+            </div>
+          )}
+          {!isTutorial && (
+            <div style={{ marginBottom: "0.8rem" }}>
+              <MissionButton onClick={resetMission}>← ミッション一覧に戻る</MissionButton>
+            </div>
+          )}
           <h4 style={{ marginBottom: "0.4rem" }}>ゴール:</h4>
           <ul style={{ paddingLeft: "1.1rem", lineHeight: 1.5 }}>
             {current.goals.map((goal) => (
@@ -324,13 +376,24 @@ export default function MissionPanel() {
               }}
             >
               🎉 ミッション完了！
-              {nextMission && (
+              {current.id === "basic_ping" && onCompleteTutorial ? (
+                <div style={{ marginTop: "0.75rem" }}>
+                  <MissionButton
+                    onClick={() => {
+                      resetMission();
+                      onCompleteTutorial();
+                    }}
+                  >
+                    🎓 チュートリアルを完了する
+                  </MissionButton>
+                </div>
+              ) : nextMission ? (
                 <div style={{ marginTop: "0.75rem" }}>
                   <MissionButton onClick={() => setMission(nextMission.id)}>
                     → 次のミッションへ進む（{nextMission.title}）
                   </MissionButton>
                 </div>
-              )}
+              ) : null}
             </div>
           )}
         </div>

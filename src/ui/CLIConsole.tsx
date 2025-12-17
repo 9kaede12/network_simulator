@@ -927,9 +927,18 @@ function NodeConsole({ nodeId, nodeName, logs, appendLog, emitLocalFlow }: NodeC
           return true;
         }
         const port = rawTokens[interfaceMatch];
+        // "address" などの誤ったコマンドを検出
+        if (port && port.toLowerCase() === "address") {
+          printLocal("エラー: 'interface address' は無効なコマンドです");
+          printLocal("ヒント: IPアドレスを設定するには 'ip address <IP> <マスク>' を使用してください");
+          return true;
+        }
         const resolved = matchPort(port);
         if (!resolved) {
           printLocal(`ポート ${port ?? ""} は利用できません`);
+          if (port && port.toLowerCase() !== "vlan") {
+            printLocal("ヒント: VLANインターフェースの場合は 'interface vlan <ID>' を使用してください");
+          }
           return true;
         }
         setCliMode("interface");
@@ -1517,6 +1526,7 @@ function NodeConsole({ nodeId, nodeName, logs, appendLog, emitLocalFlow }: NodeC
           printLocal(`switchport ${iface} の access VLAN を ${vlanId} に設定しました`);
           if (vlanId === 10) {
             markCommandProgress("tutorial_ports_assigned");
+            markCommandProgress("vlan10_assigned");
           }
           return true;
         }

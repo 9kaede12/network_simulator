@@ -527,7 +527,7 @@ export const useNet = create<NetState>((set, get) => ({
       let path = f.path;
       if (path.length === 1) {
         const [from, to] = path[0];
-        const hops = findShortestPath(from, to, state.nodes, state.links);
+        const hops = findShortestPath(from, to, state.nodes, state.links, state.switchConfigs);
         if (hops.length >= 2) {
           path = hops.slice(0, -1).map((node, idx) => [node, hops[idx + 1]]);
         }
@@ -542,7 +542,10 @@ export const useNet = create<NetState>((set, get) => ({
         },
       };
     }),
-  getPath: (from, to) => findShortestPath(from, to, get().nodes, get().links),
+  getPath: (from, to) => {
+    const state = get();
+    return findShortestPath(from, to, state.nodes, state.links, state.switchConfigs);
+  },
   clear: () =>
     set(() => ({
       nodes: {},
